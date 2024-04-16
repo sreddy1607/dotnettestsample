@@ -1,5 +1,5 @@
 # Use the official .NET Core SDK as a parent image
-FROM mcr.microsoft.com/dotnet/sdk:7.0 AS build
+FROM 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.6 AS build
 WORKDIR /app
 
 # Copy the project file and restore any dependencies (use .csproj for the project name)
@@ -13,7 +13,7 @@ COPY . .
 RUN dotnet publish -c Release -o out
 
 # Build the runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:7.0 AS runtime
+FROM 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.6 AS runtime
 WORKDIR /app
 COPY --from=build /app/out ./
 
