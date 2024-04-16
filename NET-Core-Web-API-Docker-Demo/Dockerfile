@@ -41,7 +41,7 @@
 # Learn about building .NET container images:
 # https://github.com/dotnet/dotnet-docker/blob/main/samples/README.md
 #FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-FROM 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.8 AS build
+FROM 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.9 AS build
 ARG TARGETARCH
 WORKDIR /source
 
@@ -56,7 +56,7 @@ RUN dotnet publish -a $TARGETARCH --no-restore -o /app
 
 # final stage/image
 #FROM mcr.microsoft.com/dotnet/aspnet:8.0
-FROM 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.8
+FROM 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.9
 EXPOSE 8080
 WORKDIR /app
 COPY --from=build /app .
