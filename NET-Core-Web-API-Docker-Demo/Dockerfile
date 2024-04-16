@@ -7,8 +7,8 @@ WORKDIR /app
 #COPY *.csproj ./
 COPY . .
 #COPY NET-Core-Web-API-Docker-Demo/*.csproj ./NET-Core-Web-API-Docker-Demo/
-RUN ls -l
-RUN dotnet restore "NET-Core-Web-API-Docker-Demo/NET-Core-Web-API-Docker-Demo.csproj"
+RUN ls -l NET-Core-Web-API-Docker-Demo
+RUN dotnet restore --verbosity normal "NET-Core-Web-API-Docker-Demo/NET-Core-Web-API-Docker-Demo.csproj"
 
 # Copy the rest of the application code
 #COPY . .
