@@ -6,9 +6,13 @@ WORKDIR /app
 # Copy the project file and restore any dependencies (use .csproj for the project name)
 #COPY *.csproj ./
 COPY . .
+RUN pwd
 #COPY NET-Core-Web-API-Docker-Demo/*.csproj ./NET-Core-Web-API-Docker-Demo/
 RUN ls -l NET-Core-Web-API-Docker-Demo
-RUN dotnet restore --verbosity diganostic "NET-Core-Web-API-Docker-Demo/NET-Core-Web-API-Docker-Demo.csproj"
+WORKDIR /app/NET-Core-Web-API-Docker-Demo
+RUN pwd
+#RUN dotnet restore --verbosity diganostic "NET-Core-Web-API-Docker-Demo/NET-Core-Web-API-Docker-Demo.csproj"
+RUN dotnet restore
 
 # Copy the rest of the application code
 #COPY . .
