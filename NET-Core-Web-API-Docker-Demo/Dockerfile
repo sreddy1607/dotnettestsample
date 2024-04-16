@@ -11,7 +11,8 @@ WORKDIR /app
 COPY NET-Core-Web-API-Docker-Demo/*.csproj .
 RUN pwd
 #COPY NET-Core-Web-API-Docker-Demo/*.csproj ./NET-Core-Web-API-Docker-Demo/
-RUN ls -l NET-Core-Web-API-Docker-Demo
+#RUN ls -l NET-Core-Web-API-Docker-Demo
+RUN ls -l
 #WORKDIR /app/NET-Core-Web-API-Docker-Demo
 RUN pwd
 #RUN dotnet restore --verbosity diganostic "NET-Core-Web-API-Docker-Demo/NET-Core-Web-API-Docker-Demo.csproj"
