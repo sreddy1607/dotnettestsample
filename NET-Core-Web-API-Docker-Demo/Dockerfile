@@ -2,8 +2,8 @@
 FROM 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.6 AS build
 RUN yum install -y libicu-devel
 # Install OpenSSL
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+RUN yum update && \
+    yum install -y --no-install-recommends \
     libssl-dev
 WORKDIR /app
 
