@@ -2,9 +2,7 @@
 FROM 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.6 AS build
 RUN yum install -y libicu-devel
 # Install OpenSSL
-RUN yum update && \
-    yum install -y --no-install-recommends \
-    libssl-dev
+RUN yum install -y openssl-devel
 WORKDIR /app
 
 # Copy the project file and restore any dependencies (use .csproj for the project name)
