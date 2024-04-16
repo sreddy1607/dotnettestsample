@@ -1,5 +1,6 @@
 # Use the official .NET Core SDK as a parent image
 FROM 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.6 AS build
+ARG TARGETARCH
 RUN yum install -y libicu-devel
 # Install OpenSSL
 RUN yum install -y openssl openssl-devel
@@ -16,10 +17,11 @@ RUN ls -l
 #WORKDIR /app/NET-Core-Web-API-Docker-Demo
 RUN pwd
 #RUN dotnet restore --verbosity diganostic "NET-Core-Web-API-Docker-Demo/NET-Core-Web-API-Docker-Demo.csproj"
-RUN dotnet restore --verbosity detailed
+#RUN dotnet restore --verbosity detailed
+RUN dotnet restore -a $TARGETARCH
 
 # Copy the rest of the application code
-#COPY . .
+COPY . .
 
 # Publish the application
 RUN dotnet publish -c Release -o out
