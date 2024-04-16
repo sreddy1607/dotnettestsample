@@ -3,7 +3,8 @@ FROM 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.6 AS build
 WORKDIR /app
 
 # Copy the project file and restore any dependencies (use .csproj for the project name)
-COPY *.csproj ./
+#COPY *.csproj ./
+COPY * ./
 RUN ls -l
 RUN dotnet restore
 
