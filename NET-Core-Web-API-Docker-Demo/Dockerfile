@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy the project file and restore any dependencies (use .csproj for the project name)
 #COPY *.csproj ./
-COPY *.* ./
+COPY . ./
 RUN ls -l
 RUN dotnet restore
 
