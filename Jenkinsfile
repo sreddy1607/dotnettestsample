@@ -168,7 +168,7 @@ stage('test dotnet image') {
     steps {
          
         container(name: "mspdotnet") {
-		#checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[credentialsId: 'jenkins-dev-github', url: 'abc']])
+		//checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[credentialsId: 'jenkins-dev-github', url: 'abc']])
             script {
                 withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'jenkins-ecr', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                 
