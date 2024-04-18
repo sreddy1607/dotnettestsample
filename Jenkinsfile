@@ -175,6 +175,8 @@ stage('test dotnet image') {
                    
                     sh """
 		                dotnet --version 
+		  dotnet clean
+                  dotnet nuget locals all --clear
                     git clone https://github.com/sreddy1607/dotnettestsample.git
 		    ls -l
                     dotnet restore dotnettestsample/NET-Core-Web-API-Docker-Demo.sln
