@@ -171,7 +171,8 @@ stage('test dotnet image') {
 
 
                     sh """
-		    dotnet --version
+		    dotnet --version 
+                    dotnet build -c Release
                     """
                 }
             }
