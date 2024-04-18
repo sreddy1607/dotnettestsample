@@ -176,7 +176,8 @@ stage('test dotnet image') {
                     sh """
 		                dotnet --version 
                     git clone https://github.com/sreddy1607/dotnettestsample.git
-                    dotnet restore NET-Core-Web-API-Docker-Demo.sln
+		    ls -l
+                    dotnet restore dotnettestsample/NET-Core-Web-API-Docker-Demo.sln
 
                     """
                 }
