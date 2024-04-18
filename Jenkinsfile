@@ -168,13 +168,14 @@ stage('test dotnet image') {
     steps {
          
         container(name: "mspdotnet") {
+		#checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[credentialsId: 'jenkins-dev-github', url: 'abc']])
             script {
                 withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'jenkins-ecr', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                 
-
+                   
                     sh """
 		                dotnet --version 
-                    git 'https://github.com/sreddy1607/dotnettestsample.git'
+                    git clone https://github.com/sreddy1607/dotnettestsample.git
                     dotnet restore NET-Core-Web-API-Docker-Demo.sln
 
                     """
