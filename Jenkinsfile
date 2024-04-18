@@ -112,6 +112,7 @@ pipeline {
     env_skip_build="false"
     env_stage_name=""
     env_step_name=""
+    DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 
 
   }
@@ -165,15 +166,17 @@ pipeline {
   
 stage('test dotnet image') {
     steps {
+         
         container(name: "mspdotnet") {
             script {
                 withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'jenkins-ecr', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-
+                
 
                     sh """
-		    dotnet --version 
-                    ls -l
-                    dotnet build -c Release
+		                dotnet --version 
+                    git 'https://github.com/sreddy1607/dotnettestsample.git'
+                    dotnet restore NET-Core-Web-API-Docker-Demo.sln
+
                     """
                 }
             }
@@ -218,31 +221,3 @@ stage('test dotnet image') {
   } // post
 }
 
-
-/*
-    slack notification
-*/
-/*def slackNotification(channel,msg,color,nc) {
-    def lt,lc
-
-    lt=SLACK_CHANNELS[channel].token
-    lc=SLACK_CHANNELS[channel].channel
-
-    slackSend color: color, channel: lc, message: msg, baseUrl: SLACK_URL, token: lt, notifyCommitters: nc
-}
-
-//set slack channels and tokens
-def initSlackChannels() {
-  SLACK_CHANNELS.each { key, value ->
-      withCredentials([usernamePassword(credentialsId: value.channel,
-                   passwordVariable: 'channel_token',
-                   usernameVariable: 'channel_name')]) {
-                     value.channel="#$channel_name"
-                     value.token="$channel_token"
-                     echo "channel_token is '${channel_token}'"
-		                 echo "channel_name is '${channel_name}'"
-                   }
-  }
-}
-
-*/
