@@ -1,0 +1,15 @@
+version: 0.0
+os: windows
+files:
+  - source: \Thickclient
+    destination: D:\tar-surgeclient-staging\Thickclient
+
+file_exists_behavior: OVERWRITE 
+
+hooks:
+  BeforeInstall:
+    - location: \before-install.bat
+      timeout: 300
+  AfterInstall:
+    - location: \after-install.bat
+      timeout: 300
