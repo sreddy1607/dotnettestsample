@@ -8,10 +8,8 @@ updated, please indicate so at the beginning of this file.
 =======================================================================================
 */
 
-def branch = env.BRANCH_NAME ?: "ecr"
-def namespace = env.NAMESPACE ?: "dev"
+def branch = env.BRANCH_NAME ?: "Dev"
 def workingDir = "/home/jenkins/agent"
-
 
 pipeline {
   agent {
@@ -33,6 +31,22 @@ pipeline {
                 defaultMode: 420
                 optional: true
           containers:
+            - name: dotnet
+              image: 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.34
+              tty: true
+              command: ["/bin/bash"]
+              securityContext:
+                privileged: true
+              workingDir: ${workingDir}
+              envFrom:
+                - configMapRef:
+                    name: jenkins-agent-env
+                    optional: true
+              env:
+                - name: HOME
+                  value: ${workingDir}
+                - name: BRANCH
+                  value: ${branch}
             - name: jnlp
               securityContext:
                 privileged: true
@@ -47,7 +61,7 @@ pipeline {
                 - name: jenkins-trusted-ca-bundle
                   mountPath: /etc/pki/tls/certs
             - name: node
-              image: registry.access.redhat.com/ubi8/nodejs-16:latest
+              image: registry.access.redhat.com/ubi8/nodejs-18:latest
               tty: true
               command: ["/bin/bash"]
               securityContext:
@@ -69,15 +83,11 @@ pipeline {
               volumeMounts:
                 - name: jenkins-trusted-ca-bundle
                   mountPath: /etc/pki/tls/certs
-            - name: mspdotnet
-              image: 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammismspapp:1.0.14
+            - name: aws-boto3
+              image: 136299550619.dkr.ecr.us-west-2.amazonaws.com/cammisboto3:1.0.1
               tty: true
               command: ["/bin/bash"]
-              securityContext:
-                privileged: true
               workingDir: ${workingDir}
-              securityContext:
-                privileged: true
               envFrom:
                 - configMapRef:
                     name: jenkins-agent-env
@@ -92,13 +102,12 @@ pipeline {
               volumeMounts:
                 - name: jenkins-trusted-ca-bundle
                   mountPath: /etc/pki/tls/certs
-            
       """
     }
   }
 
   options {
-    //timestamps()
+    timestamps()
     disableConcurrentBuilds()
     timeout(time:5 , unit: 'HOURS')
     skipDefaultCheckout()
@@ -106,91 +115,112 @@ pipeline {
   }
 
   environment {
-    env_git_branch_type="feature"
-    env_git_branch_name=""
     env_current_git_commit=""
-    env_skip_build="false"
-    env_stage_name=""
-    env_step_name=""
-    DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-
-
+    env_accesskey=""
+    env_secretkey=""
+    env_tag_name=""
+    env_deploy_env=""
+    env_skip_deploy="true"
+    env_DEPLOY_ENVIRONMENT="false"
+    env_DEPLOY_FILES="true"
+    env_DEPLOY_CONFIG="false"
+    env_release_type=""
   }
 
   stages {
-    stage("initialize") {
-      steps {
-        container(name: "node") {
-          script {
-
-            properties([
-              parameters([
-                // booleanParam(name: 'S3', defaultValue: false, description: 'select S3 to upload the truststore file')        
-		string(name: 'CLIENT_EMAIL', defaultValue: 'srinivas.reddy@dhcs.ca.gov', description: 'Client Email Address')
-              ])
-            ])
-
-            env_stage_name = "initialize"
-            env_step_name = "checkout"
-
-            deleteDir()
-
-            echo 'checkout source  and get the commit id'
-            //env_current_git_commit = checkout(scm).GIT_COMMIT
-
-            echo 'Loading properties file'
-            env_step_name = "load properties"
-            // load the pipeline properties
-            // load(".jenkins/pipelines/Jenkinsfile.ecr.properties")
-
-            env_step_name = "set global variables"
-            echo 'initialize slack channels and tokens'
-            //initSlackChannels()
-
-            //env_git_branch_name = BRANCH_NAME
-
-
-            // get the short version of commit
-           //env_current_git_commit="${env_current_git_commit[0..7]}"
-            //echo "The commit hash from the latest git current commit is ${env_current_git_commit}"
-                      
-            //include commit id in build name
-            currentBuild.displayName = "#${BUILD_NUMBER}"
-
-           // slackNotification("pipeline","${APP_NAME}-${env_git_branch_name}: <${BUILD_URL}console|build #${BUILD_NUMBER}> started.","#439FE0","false")
-          } //END script
-        } //END container node
-      } //END steps
-    } //END stage
-
-  
-stage('test dotnet image') {
+   stage("Initialize") {
     steps {
-         
-        container(name: "mspdotnet") {
-		//checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[credentialsId: 'jenkins-dev-github', url: 'abc']])
+        container(name: "node") {
             script {
-                withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'jenkins-ecr', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                
-                   
-                    sh """
-		                dotnet --version 
-		  dotnet clean
-                  dotnet nuget locals all --clear
-                    git clone https://github.com/sreddy1607/dotnettestsample.git
-		    ls -l
-                    dotnet restore dotnettestsample/NET-Core-Web-API-Docker-Demo.sln
+                properties([
+                    parameters([
+                        choice(name: 'RELEASE_TYPE', choices: ['PATCH', 'MINOR', 'MAJOR'], description: 'Enter Release type'),
+                        booleanParam(name: 'USE_GIT_TAG', defaultValue: false, description: 'Use the selected git tag instead of LATEST commit'),
+                        gitParameter(name: 'GIT_TAG', defaultValue: 'tar-surge-app_from_dev', description: 'Git tag to deploy', type: 'PT_TAG'),
+                        string(name: 'GIT_SHA', defaultValue: 'enter git sha(8+ chars)', description: 'Enter git SHA to deploy')
+                    ])
+                ])
 
-                    """
-                }
+                deleteDir()
+
+                echo 'Checking out source and retrieving commit ID...'
+                env_current_git_commit = checkout(scm).GIT_COMMIT
+
+                // Get the short version of the commit hash
+                env_current_git_commit = "${env_current_git_commit[0..7]}"
+
+                env_deploy_env = "DEV"
+                echo "Current deployment environment: ${env_deploy_env}"
+		def repositories = [
+                        [name: 'tar-surge-client', branch: 'Dev', url: 'https://github.com/ca-mmis/tar-surge-client.git'],
+                        [name: 'tar-surge-app', branch: 'master', url: 'https://github.com/ca-mmis/tar-surge-app.git']
+                    ]
+
+                    repositories.each { repo ->
+                        dir(repo.name) {
+                            git branch: repo.branch, credentialsId: 'github-key', url: repo.url
+                        }
+                    }  
             }
         }
-        
     }
 }
 
-}
+    stage('Build') {
+      steps {
+        container(name: "node") {
+          script {
+           sh '''
+              echo "Creating directory to build into and deploy from."
+              echo "Need to add the placeholder.txt file so AWS CodeDeploy deploys an empty directory"
+              mkdir devops/codedeploy/Thickclient
+              touch devops/codedeploy/Thickclient/placeholder.txt
+            '''
+          }
+        }
 
+        container(name: "dotnet") {
+          script {
+           sh '''
+             echo "Checking if surge-client needs to be built/deployed..."
+            
+	    
+             dotnet publish tar-surge-client/Cammis.Surge.Client.sln -o devops/codedeploy/Thickclient --verbosity detailed /p:EnableWindowsTargeting=true
+
+             ls -l devops/codedeploy/Thickclient
+            '''
+          }
+        }
+      } // end of steps
+    } // end of Build stage
+	  
+  
+   stage('Deploy') {
+      steps {
+        container(name: "aws-boto3") {
+          script {
+            sh """#!/bin/bash
+            echo "Deploy Using AWS CodeDeploy"
+            """
+            withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'jenkins-ecr-ecs', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+              step([$class: 'AWSCodeDeployPublisher',
+                  applicationName: "tar-surge-app-${env_deploy_env}",
+                  awsAccessKey: "${AWS_ACCESS_KEY_ID}",
+                  awsSecretKey: "${AWS_SECRET_ACCESS_KEY}",
+                  credentials: 'awsAccessKey',
+                  deploymentConfig: "tar-surge-app-${env_deploy_env}-config",
+                  deploymentGroupAppspec: false,
+                  deploymentGroupName: "tar-surge-app-${env_deploy_env}-INPLACE-deployment-group",
+                  deploymentMethod: 'deploy',
+                  excludes: '', iamRoleArn: '', includes: '**', pollingFreqSec: 15, pollingTimeoutSec: 900, proxyHost: '', proxyPort: 0,
+                  region: 'us-west-2', s3bucket: 'dhcs-codedeploy-app', 
+                  subdirectory: 'devops/codedeploy', versionFileName: '', waitForCompletion: true])
+            }
+          } // end of script
+        } // end of container    
+      } // end of steps
+    } // end of Deploy stage 
+  } // end of stages
 
   //pipeline post actions
   post {
@@ -199,23 +229,19 @@ stage('test dotnet image') {
     } // always
 
     success {
-        echo "Build Process was success. Site is available at ${env.SITE_URL}"
-        //slackNotification("pipeline", "${APP_NAME}-${env_git_branch_name}: <${BUILD_URL}|build #${BUILD_NUMBER}> was successful :woohoo: after ${currentBuild.durationString}.\n", "#215ACC","false")
-    }//success
+        echo "Build Process was success."
+    } //success
 
     unstable {
         echo "Build is unstable."
-       // slackNotification("pipeline","${APP_NAME}-${env_git_branch_name}: <${BUILD_URL}|build #${BUILD_NUMBER}> was unstable :shrug: after ${currentBuild.durationString}. Check `SonarQube Quality Gate` status.", "#F6F60F","true")
     } // unstable
 
     aborted {
         echo "Pipeline aborted."
-      //  slackNotification("pipeline", "${APP_NAME}-${env_git_branch_name}: <${BUILD_URL}|build #${BUILD_NUMBER}> aborted :bkpabort: after ${currentBuild.durationString} in stage: `${env_stage_name}` step: `${env_step_name}`.", "#EA6E06","false")
     } // aborted
 
     failure {
         echo "Build encountered failures ."
-      //  slackNotification("pipeline","${APP_NAME}-${env_git_branch_name}: <${BUILD_URL}|build #${BUILD_NUMBER}> failed :crash: after ${currentBuild.durationString} in stage: `${env_stage_name}` step: `${env_step_name}`. @here", "#EA0652","true")
     } // failure
 
     changed {
@@ -224,4 +250,3 @@ stage('test dotnet image') {
 
   } // post
 }
-
