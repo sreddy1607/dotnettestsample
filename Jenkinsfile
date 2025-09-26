@@ -11,6 +11,16 @@ updated, please indicate so at the beginning of this file.
 def branch = env.BRANCH_NAME ?: "master"
 def workingDir = "/home/jenkins/agent"
 
+def DEPLOY_FROM_ENV = [
+    "dev":"N/A",
+    "sit":"dev",
+    "uat":"sit",
+    "prd":"uat"
+  ]
+
+def SURGE_ENV
+
+
 pipeline {
   agent {
     kubernetes {
@@ -67,6 +77,8 @@ pipeline {
               securityContext:
                 privileged: true
               workingDir: ${workingDir}
+              securityContext:
+                privileged: true
               envFrom:
                 - configMapRef:
                     name: jenkins-agent-env
@@ -114,21 +126,12 @@ pipeline {
 
   environment {
     env_current_git_commit=""
+    env_accesskey=""
+    env_secretkey=""
     env_tag_name=""
     env_deploy_env=""
-    SONAR_TIMEOUT = 3
-    SONAR_SLEEP = 10000
-    SONAR_ERROR_MSG = "QUALITY GATE ERROR: Pipeline set to unstable"
-    SONAR_BUILD_RESULT = "UNSTABLE"
-    SONAR_SLACK_MSG = "Quality Gate Passed"
-  }
-
-  parameters {
-    choice(name: 'ENVIRONMENT', choices: ['sit', 'uat', 'prd'], description: 'Select the environment to deploy to')
-    choice(name: 'RELEASE_TYPE', choices: ['PATCH','MINOR','MAJOR'], description: 'Enter Release type')
-    booleanParam(name: 'USE_GIT_TAG', defaultValue: false, description: 'Use the selected git tag instead of LATEST commit')
-    gitParameter(name: 'GIT_TAG', defaultValue: 'tar-surge-client_from_dev', description: 'git tag', type: 'PT_TAG')
-    string(name: 'GIT_SHA',defaultValue: 'enter git sha(8+ chars)', description: 'enter git sha that you want to deploy')
+    env_promotion_to_environment=""
+    env_promotion_from_environment=""
   }
 
   stages {
@@ -136,150 +139,152 @@ pipeline {
       steps {
         container(name: "node") {
           script {
+
+            properties([
+              parameters([
+                choice(name: 'PROMOTE_TO_ENV', choices: ['sit','uat','prd'], description: 'Where to promote to?')
+              ])
+            ])
+
+            env_promotion_to_environment = params.PROMOTE_TO_ENV
+            env_promotion_from_environment=DEPLOY_FROM_ENV["${env_promotion_to_environment}"]
+
             deleteDir()
-            env_deploy_env = params.ENVIRONMENT.toUpperCase()
-            env_current_git_commit = checkout(scm).GIT_COMMIT[0..7]
-            env_tag_name = "${params.ENVIRONMENT}_${BUILD_NUMBER}_${env_current_git_commit}"
 
-            if (params.USE_GIT_TAG) {
-              env_current_git_commit = params.GIT_TAG
-            }
+            checkout(scm).GIT_COMMIT
 
-            if (!params.GIT_SHA.contains("enter")) {
-              env_current_git_commit = params.GIT_SHA
-            }
+            echo "Promoting to environment: ${env_promotion_to_environment}"
+            echo "Promoting from environment: ${env_promotion_from_environment}"
+          } //END script
+        } //END container node
+      } //END steps
+    } //END stage
 
-            def repositories = [
-              [name: 'tar-surge-client', branch: 'master', url: 'https://github.com/ca-mmis/tar-surge-client.git'],
-              [name: 'tar-surge-app', branch: 'master', url: 'https://github.com/ca-mmis/tar-surge-app.git']
-            ]
-
-            repositories.each { repo ->
-              dir(repo.name) {
-                git branch: repo.branch, credentialsId: 'github-key', url: repo.url
-              }
-            }
-
-            withCredentials([usernamePassword(credentialsId: "github-key", usernameVariable: 'NUSER', passwordVariable: 'NPASS')]) {
-              sh """
-                git config --global --add safe.directory '*'
-                git config  --global user.email "jenkins@cammis.com"
-                git config  --global user.name "jenkins"
-                git fetch --quiet --tags https://${NUSER}:${NPASS}@github.com/ca-mmis/tar-surge-client.git
-                git tag -f -a "${env_tag_name}" -m "tag build" ${env_current_git_commit}
-                git push -f https://${NUSER}:${NPASS}@github.com/ca-mmis/tar-surge-client.git ${env_tag_name}
-                git checkout ${env_current_git_commit}
-                git show --stat ${env_current_git_commit} > commit-changes.txt
-              """
-            }
-          }
-        }
-      }
-    }
-
- stage('Build') {
+    stage('Prepare Deployment') {
       steps {
-        container(name: "node") {
+        container(name: "aws-boto3") {
           script {
-           sh '''
-              echo "Creating directory to build into and deploy from."
-              echo "Need to add the placeholder.txt file so AWS CodeDeploy deploys an empty directory"
-              mkdir devops/codedeploy/thickclient
-              touch devops/codedeploy/thickclient/placeholder.txt
-            '''
-          }
-        }
-
-        container(name: "dotnet") {
-          script {
-           sh '''
-                        yum install -y zip
-                        echo "Building thickclient application..."
-                        dotnet publish tar-surge-client/Cammis.Surge.Client.sln -o devops/codedeploy/thickclient -c Release -r win-x64 --self-contained true /p:EnableWindowsTargeting=true                        
-                        echo "Listing built files..."
-                        ls -l devops/codedeploy/thickclient
-                        rm -f devops/codedeploy/thickclient/placeholder.txt
-                        echo "Zipping Thickclient DLLs and artifacts..."
-                        cd devops/codedeploy
-                        zip -r thickclient.zip thickclient
-                        ls -l thickclient.zip
-                        
-                        '''
-          }
-        }
-      } // end of steps
-    } // end of Build stage
-
-    stage("Sonar Scan") {
-      steps {
-        script {
-          withSonarQubeEnv('sonar_server') {
-            container(name: "dotnet") {
-              sh """
-                mkdir -p /home/jenkins/agent/.sonar/native-sonar-scanner
-                wget --quiet https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.1.0.4477-linux-x64.zip
-                unzip -q sonar-scanner-cli-6.1.0.4477-linux-x64.zip -d /home/jenkins/agent/.sonar/native-sonar-scanner
-              """
-            }
             container(name: "jnlp") {
-              sh """
-                /home/jenkins/agent/.sonar/native-sonar-scanner/sonar-scanner-6.1.0.4477-linux-x64/bin/sonar-scanner -Dproject.settings=${WORKSPACE}/tar-surge-client/devops/sonar/sonar-project.properties
-              """
-            }
-          }
-        }
-      }
-    }
+              lock(resource: 'deployments-github-repo',inversePrecedence: false ) {
+              dir("${WORKSPACE}/deployrepo"){
+                  withCredentials([usernamePassword(credentialsId: "github-key", usernameVariable: 'NUSER', passwordVariable: 'NPASS')]) {
+                    sh """
+                      pwd
+                      git clone https://${NUSER}:${NPASS}@github.com/ca-mmis/deployments-combined-devops.git --depth=1
+                      git config  --global user.email "jenkins@cammis.com"
+                      git config  --global user.name "jenkins"
+                      cd deployments-combined-devops
+                      git checkout master
+                      git pull
+                      mkdir -p tar-surge-client/${env_promotion_to_environment}
+                      touch tar-surge-client/${env_promotion_to_environment}/tempfile
+                      rm -r tar-surge-client/${env_promotion_to_environment}/*
+                      cp -a tar-surge-client/${env_promotion_from_environment}/. tar-surge-client/${env_promotion_to_environment}/
+                      git add -Av
 
-    stage("Quality Gate") {
-      steps {
-        container(name: "jnlp") {
-          script {
-            sleep time: SONAR_SLEEP, unit: "MILLISECONDS"
-            timeout(time: SONAR_TIMEOUT, unit: 'MINUTES') {
-              def qualGate = waitForQualityGate()
-              if (qualGate.status != "OK") {
-                currentBuild.result = SONAR_BUILD_RESULT
-              }
-            }
-          }
-        }
-      }
-    }
+                      if ! git diff-index --quiet HEAD; then
+                        git commit -m "Promotion of tar-surge-client from ${env_promotion_from_environment} to ${env_promotion_to_environment}"
+                        commitId=\""\$(git rev-parse --short=8 HEAD)"\"
+                        echo "The commit ID is: \$commitId"
+                        dateTime=\""\$(git show -s --format=%cd --date=format:%Y-%m-%d_%H-%M-%S \$commitId)"\"
+                        commitTag="Promote_tar-surge-client_to_${env_promotion_to_environment}_\${commitId}_\$dateTime"
+                        echo "The commit tag will be: \$commitTag"
+                        git tag -f -a \"\$commitTag\" -m "tag promotion" \"\$commitId\"
+                        git push https://${NUSER}:${NPASS}@github.com/ca-mmis/deployments-combined-devops.git
+                        git push https://${NUSER}:${NPASS}@github.com/ca-mmis/deployments-combined-devops.git "\$commitTag"
+
+                      else
+                        echo "Nothing changes to commit to deployment repository, still will deploy..."
+                      fi
+                    """
+                  } //end withCredentials
+                } //end dir
+              } //end lock
+            }  //end container
+          } // end of script
+        } // end of container
+      } // end of steps
+    }  // end of Prepare Deployment Stage
 
     stage('Deploy') {
       steps {
-        container(name: "node") {
-          withCredentials([usernamePassword(credentialsId: "github-key", usernameVariable: 'NUSER', passwordVariable: 'NPASS')]) {
-            sh """
-              git clone https://${NUSER}:${NPASS}@github.com/ca-mmis/tar-surge-client-deployment.git --depth=1
-              cd tar-surge-client-deployment
-              git config --global user.email "jenkins@cammis.com"
-              git config --global user.name "jenkins"
-              git checkout master
-              git pull
-              cp ${WORKSPACE}/devops/codedeploy/thickclient.zip tar-surge-client/
-              git status
-              if [[ -n \$(git status --porcelain) ]]; then
-                git add .
-                git commit -m "Automated commit - Deploying thickclient zipped DLLs"
-                git push origin master
-              fi
-              git tag -f -a "${env_tag_name}" -m "Deploying thickclient - Tag ${env_tag_name}"
-              git push origin "${env_tag_name}" --force
-            """
-          }
-        }
-      }
-    }
-  }
+        container(name: "aws-boto3") {
+          script {
+            echo "Deploy Using AWS CodeDeploy"
 
+            // Need to copy files from env_promotion_to_environment back into the devops/codedeploy directory to then deploy
+
+            sh """
+              cp -a ${WORKSPACE}/deployrepo/deployments-combined-devops/tar-surge-client/dev/. ${WORKSPACE}/devops/codedeploy/
+            """
+            SURGE_ENV = "${env_promotion_to_environment}".toUpperCase()
+
+            echo "Here is the environment to go to: ${SURGE_ENV}"
+
+            echo "Deploying to Non-DR"
+
+            withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'jenkins-ecr', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+              step([$class: 'AWSCodeDeployPublisher',
+                  applicationName: "tar-surge-app-${SURGE_ENV}",
+                  awsAccessKey: "${AWS_ACCESS_KEY_ID}",
+                  awsSecretKey: "${AWS_SECRET_ACCESS_KEY}",
+                  credentials: 'awsAccessKey',
+                  deploymentConfig: "tar-surge-app-${SURGE_ENV}-config",
+                  deploymentGroupAppspec: false,
+                  deploymentGroupName: "tar-surge-app-${SURGE_ENV}-INPLACE-deployment-group",
+                  deploymentMethod: 'deploy',
+                  excludes: '', iamRoleArn: '', includes: '**', pollingFreqSec: 15, pollingTimeoutSec: 900, proxyHost: '', proxyPort: 0,
+                  region: 'us-west-2', s3bucket: 'dhcs-codedeploy-app', 
+                  subdirectory: 'devops/codedeploy', versionFileName: '', waitForCompletion: true])
+            }
+
+            echo "Deploying to DR"
+
+            withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'jenkins-ecr', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+              step([$class: 'AWSCodeDeployPublisher',
+                  applicationName: "tar-surge-app-${SURGE_ENV}-DR",
+                  awsAccessKey: "${AWS_ACCESS_KEY_ID}",
+                  awsSecretKey: "${AWS_SECRET_ACCESS_KEY}",
+                  credentials: 'awsAccessKey',
+                  deploymentConfig: "tar-surge-app-${SURGE_ENV}-DR-config",
+                  deploymentGroupAppspec: false,
+                  deploymentGroupName: "tar-surge-app-${SURGE_ENV}-DR-INPLACE-deployment-group",
+                  deploymentMethod: 'deploy',
+                  excludes: '', iamRoleArn: '', includes: '**', pollingFreqSec: 15, pollingTimeoutSec: 900, proxyHost: '', proxyPort: 0,
+                  region: 'us-east-1', s3bucket: 'dhcs-codedeploy-app-dr', 
+                  subdirectory: 'devops/codedeploy', versionFileName: '', waitForCompletion: true])
+            }
+          } // end of script
+        } // end of container
+      } // end of steps
+    } // end of Deploy stage
+  } // end of stages
+
+  //pipeline post actions
   post {
-    always { echo "Build Process complete." }
-    success { echo "Build Process was success." }
-    unstable { echo "Build is unstable." }
-    aborted { echo "Pipeline aborted." }
-    failure { echo "Build encountered failures." }
-    changed { echo "Build content was changed." }
-  }
+    always {
+        echo "Build Process complete."
+    } // always
+
+    success {
+        echo "Build Process was success."
+    } //success
+
+    unstable {
+        echo "Build is unstable."
+    } // unstable
+
+    aborted {
+        echo "Pipeline aborted."
+    } // aborted
+
+    failure {
+        echo "Build encountered failures ."
+    } // failure
+
+    changed {
+        echo "Build content was changed."
+    } // changed
+
+  } // post
 }
